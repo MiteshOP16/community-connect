@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     allowedHosts: [
-      "community-connect-qabh.onrender.com"
+      "all"
     ],
     hmr: {
       overlay: false,
