@@ -1,1 +1,6 @@
-project_id = "axntkevisglwribtqjii"
+project_id = "ndzdpndnbngcapuqggjf"
+
+[auth.external.github]
+enabled = true
+client_id = "Ov23livw4ZQ6Y086NP6R"
+client_secret = "e8488c68eeabc34ecb5069924ba541a442151917"
