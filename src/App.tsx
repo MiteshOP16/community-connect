@@ -3,13 +3,14 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthProvider";
 import AuthPage from "./pages/Auth";
 import FeedPage from "./pages/Feed";
 import MessagesPage from "./pages/Messages";
 import ProfilePage from "./pages/Profile";
 import SearchPage from "./pages/Search";
 import CreatePage from "./pages/Create";
+import ConnectPage from "./pages/Connect";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/profile/:username" element={<ProfilePage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/connect" element={<ConnectPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

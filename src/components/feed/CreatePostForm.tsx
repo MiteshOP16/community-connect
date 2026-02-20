@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ImagePlus, X, Send } from 'lucide-react';
+import { ImagePlus, X, Send, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { createPost } from '@/lib/posts';
+import { uploadImage } from '@/lib/storage';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,12 +18,40 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
   const { profile } = useAuth();
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const [showImageInput, setShowImageInput] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const url = await uploadImage(file);
+      setImageUrl(url);
+      toast.success('Image uploaded successfully');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error('Failed to upload image. Make sure "posts" bucket exists.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !content.trim() || isSubmitting) return;
+    if (!profile || !content.trim() || isSubmitting || isUploading) return;
 
     setIsSubmitting(true);
     try {
@@ -30,7 +59,6 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
       await createPost(profile.id, content.trim(), postType, imageUrl || undefined);
       setContent('');
       setImageUrl('');
-      setShowImageInput(false);
       toast.success('Post created!');
       onPostCreated?.();
     } catch (error) {
@@ -64,32 +92,13 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
                 className="min-h-[80px] resize-none border-none bg-transparent p-0 text-foreground placeholder:text-muted-foreground focus-visible:ring-0"
               />
 
-              {showImageInput && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="url"
-                    placeholder="Enter image URL..."
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setShowImageInput(false);
-                      setImageUrl('');
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </motion.div>
-              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+              />
 
               {imageUrl && (
                 <div className="relative overflow-hidden rounded-xl">
@@ -97,8 +106,16 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
                     src={imageUrl}
                     alt="Preview"
                     className="max-h-48 w-full object-cover"
-                    onError={() => toast.error('Invalid image URL')}
                   />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute right-2 top-2 h-8 w-8 rounded-full"
+                    onClick={() => setImageUrl('')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               )}
 
@@ -107,19 +124,28 @@ export function CreatePostForm({ onPostCreated }: CreatePostFormProps) {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowImageInput(!showImageInput)}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
                   className="gap-2 text-muted-foreground hover:text-primary"
                 >
-                  <ImagePlus className="h-4 w-4" />
-                  Add Image
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ImagePlus className="h-4 w-4" />
+                  )}
+                  {imageUrl ? 'Change Image' : 'Add Image'}
                 </Button>
 
                 <Button
                   type="submit"
-                  disabled={!content.trim() || isSubmitting}
+                  disabled={!content.trim() || isSubmitting || isUploading}
                   className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                 >
-                  <Send className="h-4 w-4" />
+                  {isSubmitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                   Post
                 </Button>
               </div>

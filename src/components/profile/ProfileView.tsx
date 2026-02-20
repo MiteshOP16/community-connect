@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { UserPlus, UserMinus, MessageCircle, Loader2 } from 'lucide-react';
+import { UserPlus, UserMinus, MessageCircle, Loader2, Clock, Bell } from 'lucide-react';
 import { Profile, getProfile } from '@/lib/profiles';
-import { getFollowStats, isFollowing, followUser, unfollowUser, areMutualFollowers, FollowStats } from '@/lib/follows';
+import { getFollowStats, isFollowing, followUser, unfollowUser, areMutualFollowers, FollowStats, getPendingRequest, FollowRequest } from '@/lib/follows';
 import { fetchUserPosts, Post } from '@/lib/posts';
 import { getOrCreateConversation } from '@/lib/chat';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PostCard } from '@/components/feed/PostCard';
+import { FollowRequestList } from './FollowRequestList';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -24,40 +25,43 @@ export function ProfileView({ profileId }: ProfileViewProps) {
   const [stats, setStats] = useState<FollowStats>({ followers_count: 0, following_count: 0 });
   const [posts, setPosts] = useState<Post[]>([]);
   const [following, setFollowing] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<FollowRequest | null>(null);
   const [canMessage, setCanMessage] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   const isOwnProfile = currentUser?.id === profileId;
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const [profile, followStats, userPosts] = await Promise.all([
-          getProfile(profileId),
-          getFollowStats(profileId),
-          fetchUserPosts(profileId),
+  const loadProfile = async () => {
+    try {
+      const [profile, followStats, userPosts] = await Promise.all([
+        getProfile(profileId),
+        getFollowStats(profileId),
+        fetchUserPosts(profileId),
+      ]);
+
+      setProfileData(profile);
+      setStats(followStats);
+      setPosts(userPosts);
+
+      if (currentUser && !isOwnProfile) {
+        const [isFollow, isMutual, pending] = await Promise.all([
+          isFollowing(currentUser.id, profileId),
+          areMutualFollowers(currentUser.id, profileId),
+          getPendingRequest(currentUser.id, profileId),
         ]);
-
-        setProfileData(profile);
-        setStats(followStats);
-        setPosts(userPosts);
-
-        if (currentUser && !isOwnProfile) {
-          const [isFollow, isMutual] = await Promise.all([
-            isFollowing(currentUser.id, profileId),
-            areMutualFollowers(currentUser.id, profileId),
-          ]);
-          setFollowing(isFollow);
-          setCanMessage(isMutual);
-        }
-      } catch (error) {
-        console.error('Error loading profile:', error);
-      } finally {
-        setIsLoading(false);
+        setFollowing(isFollow);
+        setCanMessage(isMutual);
+        setPendingRequest(pending);
       }
-    };
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     loadProfile();
   }, [profileId, currentUser, isOwnProfile]);
 
@@ -70,17 +74,33 @@ export function ProfileView({ profileId }: ProfileViewProps) {
         await unfollowUser(currentUser.id, profileId);
         setFollowing(false);
         setStats((s) => ({ ...s, followers_count: s.followers_count - 1 }));
+        setCanMessage(false);
         toast.success('Unfollowed');
+      } else if (pendingRequest) {
+        toast.info('Follow request already pending');
       } else {
         await followUser(currentUser.id, profileId);
-        setFollowing(true);
-        setStats((s) => ({ ...s, followers_count: s.followers_count + 1 }));
-        toast.success('Following');
+        // Immediately set a mock pending request for visual feedback
+        setPendingRequest({
+          id: 'temp',
+          sender_id: currentUser.id,
+          receiver_id: profileId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        } as FollowRequest);
+        toast.success('Follow request sent');
       }
 
-      // Check if mutual now
-      const isMutual = await areMutualFollowers(currentUser.id, profileId);
+      // Background refresh to confirm state from server
+      const [isFollow, isMutual, pending] = await Promise.all([
+        isFollowing(currentUser.id, profileId),
+        areMutualFollowers(currentUser.id, profileId),
+        getPendingRequest(currentUser.id, profileId),
+      ]);
+      setFollowing(isFollow);
       setCanMessage(isMutual);
+      setPendingRequest(pending);
+
     } catch (error) {
       console.error('Error toggling follow:', error);
       toast.error('Failed to update follow status');
@@ -94,7 +114,18 @@ export function ProfileView({ profileId }: ProfileViewProps) {
 
     try {
       const conversation = await getOrCreateConversation(currentUser.id, profileId);
-      navigate('/messages', { state: { conversationId: conversation.id, otherUser: profileData } });
+      console.log('[Profile] Navigation state:', { conversationId: conversation.id, otherUser: profileData });
+      navigate('/messages', {
+        state: {
+          conversationId: conversation.id,
+          otherUser: {
+            id: profileData.id,
+            username: profileData.username,
+            avatar_url: profileData.avatar_url
+          }
+        },
+        replace: true
+      });
     } catch (error) {
       console.error('Error creating conversation:', error);
       toast.error('Failed to start conversation');
@@ -150,19 +181,21 @@ export function ProfileView({ profileId }: ProfileViewProps) {
                 {!isOwnProfile && (
                   <div className="flex gap-2">
                     <Button
-                      variant={following ? 'secondary' : 'default'}
+                      variant={following ? 'secondary' : pendingRequest ? 'outline' : 'default'}
                       onClick={handleFollowToggle}
                       disabled={isFollowLoading}
-                      className="gap-2"
+                      className="gap-2 min-w-[120px]"
                     >
                       {isFollowLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : following ? (
                         <UserMinus className="h-4 w-4" />
+                      ) : pendingRequest ? (
+                        <Clock className="h-4 w-4" />
                       ) : (
                         <UserPlus className="h-4 w-4" />
                       )}
-                      {following ? 'Unfollow' : 'Follow'}
+                      {following ? 'Unfollow' : pendingRequest ? 'Requested' : 'Connect'}
                     </Button>
 
                     {canMessage && (
@@ -194,18 +227,33 @@ export function ProfileView({ profileId }: ProfileViewProps) {
         </Card>
       </motion.div>
 
-      {/* Posts */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">Posts</h2>
-        {posts.length === 0 ? (
-          <Card className="glass-card p-8 text-center">
-            <p className="text-muted-foreground">No posts yet</p>
-          </Card>
-        ) : (
-          posts.map((post) => (
-            <PostCard key={post.id} post={post} onDelete={handlePostDeleted} />
-          ))
-        )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Posts */}
+        <div className="md:col-span-2 space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Posts</h2>
+          {posts.length === 0 ? (
+            <Card className="glass-card p-8 text-center text-muted-foreground">
+              No posts yet
+            </Card>
+          ) : (
+            posts.map((post) => (
+              <PostCard key={post.id} post={post} onDelete={handlePostDeleted} />
+            ))
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {isOwnProfile && (
+            <Card className="glass-card p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Bell className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold text-foreground">Pending Requests</h3>
+              </div>
+              <FollowRequestList profileId={profileId} onUpdate={loadProfile} />
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

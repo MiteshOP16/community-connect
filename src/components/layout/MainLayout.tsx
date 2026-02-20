@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Sidebar } from './Sidebar';
+import { Sidebar, BottomNav } from './Sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 
@@ -26,13 +26,14 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-20 lg:pb-0">
       <Sidebar />
-      <main className="ml-64 min-h-screen">
-        <div className="mx-auto max-w-3xl p-6">
+      <main className="lg:ml-64 min-h-screen">
+        <div className="mx-auto max-w-4xl p-4 sm:p-6">
           {children}
         </div>
       </main>
+      <BottomNav />
     </div>
   );
 }
